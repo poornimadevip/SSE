@@ -7,7 +7,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 
 @SpringBootTest 
-class SSEApplicationTests {
+class SSEApplicationTest {
 
     @Autowired
     private ApplicationContext applicationContext;
