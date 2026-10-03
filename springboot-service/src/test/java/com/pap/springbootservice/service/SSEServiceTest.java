@@ -1,58 +1,51 @@
 package com.pap.springbootservice.service;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
 import java.time.LocalDateTime;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.pap.springbootservice.model.SSEEvent;
-import com.pap.springbootservice.model.SSEEventCache;
 
-@ExtendWith(MockitoExtension.class)
-public class SSEServiceTest {
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
-    @Mock 
-    private SSEEventCache cache;
+class SSEServiceTest {
 
-    @InjectMocks 
-    private SSEServiceImpl sseService;
+    @Test
+    void publishesNewEventsToRegisteredListeners() {
+        SSEServiceImpl service = new SSEServiceImpl();
+        AtomicReference<SSEEvent> received = new AtomicReference<>();
+        service.addEventListener(received::set);
+        SSEEvent event = new SSEEvent("1", LocalDateTime.now(), "A new event");
 
-    @Test 
-    public void testSendEvent() {
-        SSEEvent event = new SSEEvent("1", LocalDateTime.now(), "Test Event");
-        doNothing().when(cache).addEvent(event);
-        sseService.sendEvent(event);
-        verify(cache, times(1)).addEvent(event);
+        service.sendEvent(event);
+
+        assertEquals(event, received.get());
     }
 
-    @Test 
-    public void testGetEvent(){
-        SSEEvent event = new SSEEvent("1", LocalDateTime.now(), "Test Event");
-        when(cache.getEvent()).thenReturn(event);
-        SSEEvent result = sseService.getEvent();
-        verify(cache, times(1)).getEvent();
-        assertEquals(event.message(), result.message());
+    @Test
+    void deliversPendingEventsWhenAListenerConnects() {
+        SSEServiceImpl service = new SSEServiceImpl();
+        SSEEvent event = new SSEEvent("1", LocalDateTime.now(), "A pending event");
+        service.sendEvent(event);
+        AtomicReference<SSEEvent> received = new AtomicReference<>();
+
+        service.addEventListener(received::set);
+
+        assertEquals(event, received.get());
     }
 
-    @Test 
-    public void testIsEventAvailableTrue(){
-        when(cache.hasEvent()).thenReturn(true);
-        assertEquals(true, sseService.isEventAvailable());
-    }
+    @Test
+    void doesNotPublishEventsToRemovedListeners() {
+        SSEServiceImpl service = new SSEServiceImpl();
+        AtomicReference<SSEEvent> received = new AtomicReference<>();
+        java.util.function.Consumer<SSEEvent> listener = received::set;
+        service.addEventListener(listener);
+        service.removeEventListener(listener);
 
-    @Test 
-    public void testIsEventAvailableFalse(){
-        when(cache.hasEvent()).thenReturn(false);
-        assertEquals(false, sseService.isEventAvailable());
+        service.sendEvent(new SSEEvent("1", LocalDateTime.now(), "A new event"));
+
+        assertNull(received.get());
     }
-    
 }

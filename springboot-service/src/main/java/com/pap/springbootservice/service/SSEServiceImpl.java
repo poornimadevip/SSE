@@ -1,31 +1,39 @@
 package com.pap.springbootservice.service;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
+
 import org.springframework.stereotype.Service;
 
-import com.pap.springbootservice.model.SSEEventCache;
 import com.pap.springbootservice.model.SSEEvent;
 
-@Service 
+@Service
 public class SSEServiceImpl implements SSEService {
-    private final SSEEventCache cache;
+    private final CopyOnWriteArrayList<Consumer<SSEEvent>> eventListeners = new CopyOnWriteArrayList<>();
+    private final Deque<SSEEvent> pendingEvents = new ArrayDeque<>();
 
-    public SSEServiceImpl(SSEEventCache sseCacheRegistry) {
-        this.cache = sseCacheRegistry;
+    @Override
+    public synchronized void sendEvent(SSEEvent event) {
+        if (eventListeners.isEmpty()) {
+            pendingEvents.addLast(event);
+            return;
+        }
+
+        eventListeners.forEach(listener -> listener.accept(event));
     }
 
     @Override
-    public void sendEvent(SSEEvent event) {
-        cache.addEvent(event);
+    public synchronized void addEventListener(Consumer<SSEEvent> listener) {
+        eventListeners.add(listener);
+        while (!pendingEvents.isEmpty() && eventListeners.contains(listener)) {
+            listener.accept(pendingEvents.removeFirst());
+        }
     }
 
     @Override
-    public SSEEvent getEvent() {
-        return cache.getEvent();
+    public synchronized void removeEventListener(Consumer<SSEEvent> listener) {
+        eventListeners.remove(listener);
     }
-
-    @Override
-    public boolean isEventAvailable() {
-        return cache.hasEvent();
-    }
-
 }

@@ -1,5 +1,8 @@
 package com.pap.springbootservice.controller;
 
+import java.io.IOException;
+import java.util.function.Consumer;
+
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,32 +26,21 @@ public class SSEController {
     }
 
     protected SseEmitter createEmitter() {
-        return new SseEmitter();
+        return new SseEmitter(0L);
     }
 
     @GetMapping("/stream")
     public SseEmitter getEvents() {
         SseEmitter emitter = createEmitter();
+        Consumer<SSEEvent> listener = new EmitterEventListener(emitter);
+        sseService.addEventListener(listener);
+        emitter.onCompletion(() -> sseService.removeEventListener(listener));
+        emitter.onTimeout(() -> sseService.removeEventListener(listener));
+        emitter.onError(error -> {
+            log.warn("SSE client connection failed", error);
+            sseService.removeEventListener(listener);
+        });
         log.info("Starting SSE event stream");
-        try {
-            while (sseService.isEventAvailable()) {
-                log.info("SSE Event available");
-                SSEEvent event = sseService.getEvent();
-                if (event != null) {
-                    emitter.send(event);
-                    log.debug("Sent SSE event with ID {}", event.id());
-                }
-                Thread.sleep(1000);
-            }
-            log.info("SSE event stream completed");
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.warn("SSE event stream was interrupted", e);
-            emitter.completeWithError(e);
-        } catch (Exception e) {
-            log.error("Error while streaming SSE events", e);
-            emitter.completeWithError(e);
-        }
         return emitter;
     }
 
@@ -63,6 +55,28 @@ public class SSEController {
         log.info("Accepted SSE event with ID {}", event.id());
 
         return ResponseEntity.created(null).build();
+    }
+
+    private final class EmitterEventListener implements Consumer<SSEEvent> {
+        private final SseEmitter emitter;
+
+        private EmitterEventListener(SseEmitter emitter) {
+            this.emitter = emitter;
+        }
+
+        @Override
+        public void accept(SSEEvent event) {
+            try {
+                emitter.send(SseEmitter.event()
+                    .name("sse-event")
+                    .data(event));
+                log.debug("Sent SSE event with ID {}", event.id());
+            } catch (IOException e) {
+                log.warn("Unable to send SSE event; closing the client stream", e);
+                sseService.removeEventListener(this);
+                emitter.completeWithError(e);
+            }
+        }
     }
 
 }
